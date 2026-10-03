@@ -1,3 +1,4 @@
+from typing import Sequence
 from ollama import chat
 
 class LocalLLM:
@@ -6,15 +7,10 @@ class LocalLLM:
     def __init__(self,model: str="llama3:latest"):
         self.model=model
 
-    def generate(self,prompt:str) -> str:
+    def generate(self,messages:Sequence[dict[str,str]]) -> str:
         """Generate a response from local LLM"""
         response=chat(
             model=self.model,
-            messages=[
-                {
-                    "role":"user",
-                    "content":prompt,
-                }
-            ],
+            messages=list(messages),
         )
         return response["message"]["content"]
