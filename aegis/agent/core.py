@@ -1,5 +1,5 @@
 from typing import Callable
-
+from aegis.memory.extractor import FactExtractor
 from aegis.agent.llm import LocalLLM
 from aegis.memory.store import MemoryStore
 
@@ -14,7 +14,7 @@ class AegisAgent:
     ):
         self.llm = LocalLLM(model=model)
         self.memory = MemoryStore(memory_path)
-
+        self.extractor = FactExtractor()
         self.tools: dict[str, Callable] = {}
         self.history: list[dict[str, str]] = []
 
@@ -58,13 +58,15 @@ class AegisAgent:
 
         response = self.llm.generate(context_messages)
 
-        self.history.append(
-            {
-                "role": "assistant",
-                "content": response,
-            }
-        )
+        self.history.append({"role": "assistant", "content": response})
 
         self.memory.add(prompt)
+
+        for fact in self.extractor.extract(prompt):
+            self.memory.remember(
+                key=fact["key"],
+                value=fact["value"],
+                category=fact["category"],
+            )
 
         return response

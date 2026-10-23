@@ -31,6 +31,15 @@ class MemoryStore:
         with self._connect() as connection:
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS structured_memories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     key TEXT NOT NULL UNIQUE,
@@ -84,9 +93,9 @@ class MemoryStore:
 
         return results
 
+    
     def search(self, query: str, limit: int = 5) -> list[str]:
-        """Search legacy and structured memories using keyword matching."""
-
+        """Prioritize structured facts over legacy conversational memories."""
         if limit <= 0:
             return []
 
@@ -99,7 +108,8 @@ class MemoryStore:
         if not terms:
             return []
 
-        matches = []
+        structured_matches = []
+        legacy_matches = []
 
         with self._connect() as connection:
             tables = {
@@ -110,6 +120,23 @@ class MemoryStore:
             }
 
             for term in terms:
+                if "structured_memories" in tables:
+                    rows = connection.execute(
+                        """
+                        SELECT key, value
+                        FROM structured_memories
+                        WHERE instr(lower(key), lower(?)) > 0
+                        OR instr(lower(value), lower(?)) > 0
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        (term, term, limit),
+                    ).fetchall()
+
+                    structured_matches.extend(
+                        f"{row[0]}: {row[1]}" for row in rows
+                    )
+
                 if "memories" in tables:
                     rows = connection.execute(
                         """
@@ -122,26 +149,14 @@ class MemoryStore:
                         (term, limit),
                     ).fetchall()
 
-                    matches.extend(row[0] for row in rows)
+                    legacy_matches.extend(row[0] for row in rows)
 
-                if "structured_memories" in tables:
-                    rows = connection.execute(
-                        """
-                        SELECT key, value
-                        FROM structured_memories
-                        WHERE instr(lower(key), lower(?)) > 0
-                           OR instr(lower(value), lower(?)) > 0
-                        ORDER BY updated_at DESC
-                        LIMIT ?
-                        """,
-                        (term, term, limit),
-                    ).fetchall()
+        # Deduplicate and give structured facts priority.
+        structured_matches = list(dict.fromkeys(structured_matches))
+        legacy_matches = list(dict.fromkeys(legacy_matches))
 
-                    matches.extend(
-                        f"{row[0]}: {row[1]}" for row in rows
-                    )
+        return (structured_matches + legacy_matches)[:limit]
 
-        return list(dict.fromkeys(matches))[:limit]
 
     def remember(
         self,
