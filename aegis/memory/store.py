@@ -60,3 +60,36 @@ class MemoryStore:
             ).fetchall()
 
         return [row[0] for row in rows]
+
+
+    def search(self, query: str, limit: int = 5) -> list[str]:
+        """Retrieve memories containing terms from the query."""
+
+        terms = [
+            term.strip().lower()
+            for term in query.split()
+            if len(term.strip()) >= 3
+        ]
+
+        if not terms:
+            return []
+
+        conditions = " OR ".join(
+            ["LOWER(content) LIKE ?" for _ in terms]
+        )
+
+        parameters = [f"%{term}%" for term in terms]
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT content
+                FROM memories
+                WHERE {conditions}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (*parameters, limit),
+            ).fetchall()
+
+        return [row[0] for row in rows]
